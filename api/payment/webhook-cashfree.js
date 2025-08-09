@@ -1,7 +1,7 @@
-import { cashfreeWebhook } from '../../../controllers/paymentController';
-import cors from 'cors';
+const { cashfreeWebhook } = require('../../../controllers/paymentController');
+const cors = require('cors');
 
-const webhookCashfree = (req, res) => {
+module.exports = (req, res) => {
   cors({ origin: true, credentials: true })(req, res, () => {
     if (req.method === 'POST') {
       return cashfreeWebhook(req, res);
@@ -9,5 +9,3 @@ const webhookCashfree = (req, res) => {
     res.status(405).json({ message: 'Method Not Allowed' });
   });
 };
-
-export default webhookCashfree;

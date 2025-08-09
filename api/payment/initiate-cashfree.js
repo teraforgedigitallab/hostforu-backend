@@ -1,7 +1,7 @@
-import { initiateCashfreePayment } from '../../../controllers/paymentController';
+const { initiateCashfreePayment } = require('../../../controllers/paymentController');
 const cors = require('cors');
 
-const initiateCashfree = (req, res) => {
+module.exports = (req, res) => {
   cors({ origin: true, credentials: true })(req, res, () => {
     if (req.method === 'POST') {
       return initiateCashfreePayment(req, res);
@@ -9,5 +9,3 @@ const initiateCashfree = (req, res) => {
     res.status(405).json({ message: 'Method Not Allowed' });
   });
 };
-
-export default initiateCashfree;
