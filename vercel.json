@@ -1,27 +1,45 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/index.js", "use": "@vercel/node" }
-  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
   "routes": [
     {
-      "src": "/api/(.*)",
+      "src": "/api/payment/initiate-cashfree",
+      "methods": ["OPTIONS", "POST"],
+      "dest": "/api/payment/initiate-cashfree.js",
       "headers": {
         "Access-Control-Allow-Origin": "https://hostforu.com",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, X-VERIFY, X-MERCHANT-ID",
         "Access-Control-Allow-Credentials": "true"
-      },
-      "continue": true
+      }
     },
     {
-      "src": "/api/(.*)",
-      "methods": ["OPTIONS"],
-      "status": 200
+      "src": "/api/payment/verify-cashfree",
+      "methods": ["OPTIONS", "POST"],
+      "dest": "/api/payment/verify-cashfree.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "https://hostforu.com",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-VERIFY, X-MERCHANT-ID",
+        "Access-Control-Allow-Credentials": "true"
+      }
     },
     {
-      "src": "/(.*)",
-      "dest": "/api/index.js"
+      "src": "/api/payment/webhook-cashfree",
+      "methods": ["POST"],
+      "dest": "/api/payment/webhook-cashfree.js"
+    },
+    {
+      "src": "/api",
+      "dest": "/api/index.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "https://hostforu.com",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Credentials": "true"
+      }
     }
   ]
 }

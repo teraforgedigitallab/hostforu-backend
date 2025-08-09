@@ -1,26 +1,7 @@
 const axios = require("axios");
-const crypto = require("crypto");
-const {
-  StandardCheckoutClient,
-  Env,
-  MetaInfo,
-  StandardCheckoutPayRequest,
-} = require("pg-sdk-node");
 const { Cashfree, CFEnvironment } = require("cashfree-pg");
 const nodemailer = require("nodemailer");
-const admin = require("firebase-admin");
-
-// Initialize Firebase Admin SDK (if not already initialized elsewhere)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    }),
-  });
-  console.log("Firebase Admin SDK initialized successfully");
-}
+const admin = require("../utils/firebase");
 
 // Get Firestore instance
 const db = admin.firestore();
@@ -44,16 +25,13 @@ const sendAdminNotificationEmail = async (paymentDetails) => {
       customerEmail,
       customerPhone,
       amount,
-      ecommPlan,
-      hostingPlan,
+      plan,
+      duration,
       merchantTransactionId,
+      currency = "INR"
     } = paymentDetails;
 
     const subject = `New Client Alert: ${customerName} has made a payment!`;
-
-    const selectedPackage = [];
-    if (ecommPlan) selectedPackage.push(`E-commerce Plan: ${ecommPlan}`);
-    if (hostingPlan) selectedPackage.push(`Hosting Plan: ${hostingPlan}`);
 
     const html = `
       <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
@@ -68,10 +46,9 @@ const sendAdminNotificationEmail = async (paymentDetails) => {
         </ul>
         <h3 style="margin-top: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px;">Purchase Details:</h3>
         <ul style="list-style-type: none; padding-left: 0;">
-          <li><strong>Amount Paid:</strong> $${amount}</li>
-          <li><strong>Selected Package:</strong> ${
-            selectedPackage.join(", ") || "Custom package"
-          }</li>
+          <li><strong>Amount Paid:</strong> ${currency} ${amount}</li>
+          <li><strong>Plan:</strong> ${plan || "Custom package"}</li>
+          <li><strong>Duration:</strong> ${duration} Month(s)</li>
         </ul>
         <div style="margin-top: 30px; padding: 15px; background-color: #f7f7f7; border-radius: 5px;">
           <p style="margin-top: 0;"><strong>Next Steps:</strong></p>
@@ -111,19 +88,21 @@ const storePaymentData = async (paymentData) => {
         name: paymentData.customerName || "",
         email: paymentData.customerEmail || "",
         phone: paymentData.customerPhone || "",
+        company: paymentData.company || "",
       },
       transactionInfo: {
         id: paymentData.merchantTransactionId || "",
         amount: paymentData.amount || 0,
+        currency: paymentData.currency || "INR",
         status: paymentData.status || "UNKNOWN",
-        paymentMethod: paymentData.paymentMethod || "cashfree",
+        paymentMethod: "cashfree",
         createdAt: paymentData.createdAt || timestamp.toISOString(),
         updatedAt: paymentData.updatedAt || timestamp.toISOString(),
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
       },
       planDetails: {
-        ecommPlan: paymentData.ecommPlan || "",
-        hostingPlan: paymentData.hostingPlan || "",
+        plan: paymentData.plan || "",
+        duration: paymentData.duration || "",
       },
     };
 
@@ -161,11 +140,14 @@ exports.initiateCashfreePayment = async (req, res) => {
   try {
     const {
       amount,
-      ecommPlan,
-      hostingPlan,
+      plan,
+      duration,
       customerName,
       customerEmail,
       customerPhone,
+      company,
+      currency = "INR",
+      returnUrl,
     } = req.body;
 
     if (!amount || !customerEmail || !customerName || !customerPhone) {
@@ -183,23 +165,19 @@ exports.initiateCashfreePayment = async (req, res) => {
         : "9999999999";
 
     // Generate unique transaction ID
-    const merchantTransactionId = `CMS_${Date.now()}_${Math.random()
+    const merchantTransactionId = `HFU_${Date.now()}_${Math.random()
       .toString(36)
       .substr(2, 6)
       .toUpperCase()}`;
 
     // Create return URL
-    const returnUrl = `${
-      process.env.FRONTEND_URL
-    }/payment-status?merchantTransactionId=${merchantTransactionId}&amount=${amount}&method=cashfree&customer=${encodeURIComponent(
-      customerName
-    )}`;
+    const finalReturnUrl = `${returnUrl || process.env.FRONTEND_URL + "/payment-status"}?order_id=${merchantTransactionId}`;
 
     // Prepare order request
     const orderRequest = {
       order_id: merchantTransactionId,
       order_amount: amount.toString(),
-      order_currency: "INR",
+      order_currency: currency,
       customer_details: {
         customer_id: `CUST_${Date.now()}`,
         customer_name: customerName,
@@ -207,10 +185,10 @@ exports.initiateCashfreePayment = async (req, res) => {
         customer_phone: validatedPhone,
       },
       order_meta: {
-        return_url: returnUrl + "?order_id={order_id}",
+        return_url: finalReturnUrl,
         notify_url: process.env.BACKEND_URL + "/api/payment/webhook-cashfree",
       },
-      order_note: `Hostforu - ${ecommPlan} + ${hostingPlan}`,
+      order_note: `Hostforu - ${plan || "Hosting"} Plan for ${duration || "12"} Month(s)`,
     };
 
     // Create order in Cashfree
@@ -222,11 +200,13 @@ exports.initiateCashfreePayment = async (req, res) => {
       const paymentInfo = {
         merchantTransactionId,
         amount: parseFloat(amount),
+        currency,
         customerName,
         customerEmail,
         customerPhone: validatedPhone,
-        ecommPlan,
-        hostingPlan,
+        company,
+        plan,
+        duration,
         status: "INITIATED",
         createdAt: new Date().toISOString(),
         paymentMethod: "cashfree",
@@ -237,9 +217,8 @@ exports.initiateCashfreePayment = async (req, res) => {
 
       return res.json({
         success: true,
-        orderId: response.data.order_id,
+        order_id: response.data.order_id,
         payment_session_id: response.data.payment_session_id,
-        paymentSessionId: response.data.payment_session_id,
         merchantTransactionId,
       });
     } else {
@@ -266,41 +245,48 @@ exports.initiateCashfreePayment = async (req, res) => {
 // Verify Cashfree Payment
 exports.verifyCashfreePayment = async (req, res) => {
   try {
-    const { merchantTransactionId } = req.body;
+    const { orderId } = req.body;
 
-    if (!merchantTransactionId) {
+    if (!orderId) {
       return res.status(400).json({
         success: false,
-        message: "Missing transaction ID",
+        message: "Missing orderId",
       });
     }
 
     // Fetch order details from Cashfree
     const cashfree = getCashfreeClient();
-    const response = await cashfree.PGFetchOrder(merchantTransactionId);
+    const response = await cashfree.PGFetchOrder(orderId);
 
     const orderStatus = response.data.order_status;
 
     // If payment successful, send email and update Firestore
     if (orderStatus === "PAID") {
       // Fetch payment info from Firestore
-      const docRef = db.collection("payments").doc(merchantTransactionId);
+      const docRef = db.collection("payments").doc(orderId);
       const doc = await docRef.get();
-      const paymentInfo = doc.exists ? doc.data() : {};
+      
+      if (doc.exists) {
+        const paymentInfo = doc.data();
 
-      // Send admin notification email
-      await sendAdminNotificationEmail({
-        ...paymentInfo.customerInfo,
-        ...paymentInfo.planDetails,
-        amount: paymentInfo.transactionInfo?.amount,
-        merchantTransactionId,
-      });
+        // Send admin notification email
+        await sendAdminNotificationEmail({
+          customerName: paymentInfo.customerInfo.name,
+          customerEmail: paymentInfo.customerInfo.email,
+          customerPhone: paymentInfo.customerInfo.phone,
+          amount: paymentInfo.transactionInfo.amount,
+          currency: paymentInfo.transactionInfo.currency,
+          plan: paymentInfo.planDetails.plan,
+          duration: paymentInfo.planDetails.duration,
+          merchantTransactionId: orderId,
+        });
 
-      // Update Firestore status
-      await docRef.update({
-        "transactionInfo.status": "COMPLETED",
-        "transactionInfo.updatedAt": new Date().toISOString(),
-      });
+        // Update Firestore status
+        await docRef.update({
+          "transactionInfo.status": "COMPLETED",
+          "transactionInfo.updatedAt": new Date().toISOString(),
+        });
+      }
 
       return res.json({
         success: true,
@@ -348,24 +334,31 @@ exports.cashfreeWebhook = async (req, res) => {
     if (orderId) {
       // Update Firestore status
       const docRef = db.collection("payments").doc(orderId);
-      await docRef.update({
-        "transactionInfo.status":
-          orderStatus === "PAID" ? "COMPLETED" : orderStatus,
-        "transactionInfo.updatedAt": new Date().toISOString(),
-        webhookData: eventData,
-      });
-
-      // If payment is successful, send notification
-      if (orderStatus === "PAID") {
-        const doc = await docRef.get();
-        const paymentInfo = doc.exists ? doc.data() : {};
-
-        await sendAdminNotificationEmail({
-          ...paymentInfo.customerInfo,
-          ...paymentInfo.planDetails,
-          amount: paymentInfo.transactionInfo?.amount,
-          merchantTransactionId: orderId,
+      const doc = await docRef.get();
+      
+      if (doc.exists) {
+        await docRef.update({
+          "transactionInfo.status":
+            orderStatus === "PAID" ? "COMPLETED" : orderStatus,
+          "transactionInfo.updatedAt": new Date().toISOString(),
+          webhookData: eventData,
         });
+
+        // If payment is successful, send notification
+        if (orderStatus === "PAID") {
+          const paymentInfo = doc.data();
+
+          await sendAdminNotificationEmail({
+            customerName: paymentInfo.customerInfo.name,
+            customerEmail: paymentInfo.customerInfo.email,
+            customerPhone: paymentInfo.customerInfo.phone,
+            amount: paymentInfo.transactionInfo.amount,
+            currency: paymentInfo.transactionInfo.currency,
+            plan: paymentInfo.planDetails.plan,
+            duration: paymentInfo.planDetails.duration,
+            merchantTransactionId: orderId,
+          });
+        }
       }
     }
 
