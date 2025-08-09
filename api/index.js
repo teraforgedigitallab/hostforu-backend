@@ -60,4 +60,13 @@ app.use((req, res) => {
   });
 });
 
+// Export the app for Vercel serverless
 module.exports = app;
+
+// If you're using the app.listen pattern locally, add this conditional:
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
