@@ -254,9 +254,13 @@ exports.verifyCashfreePayment = async (req, res) => {
       });
     }
 
-    // Fetch order details from Cashfree
+    // Fetch order details from Cashfree with proper versioning
     const cashfree = getCashfreeClient();
-    const response = await cashfree.PGFetchOrder(orderId);
+    const version = "2023-08-01"; // Add API version as required by Cashfree v3
+    const response = await cashfree.PGFetchOrder(version, orderId);
+
+    // Log the response for debugging
+    console.log("Cashfree order verification response:", JSON.stringify(response.data, null, 2));
 
     const orderStatus = response.data.order_status;
 
@@ -320,6 +324,7 @@ exports.verifyCashfreePayment = async (req, res) => {
       message:
         "Verification failed due to a server error: " +
         (error.response?.data?.message || error.message),
+      error: error.stack, // Include stack trace for debugging
     });
   }
 };
