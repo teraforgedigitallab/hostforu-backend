@@ -254,11 +254,28 @@ exports.verifyCashfreePayment = async (req, res) => {
       });
     }
 
-    // Fetch order details from Cashfree with proper versioning
+    console.log("Verifying payment for orderId:", orderId);
+    
+    // Fetch order details from Cashfree - FIX HERE
     const cashfree = getCashfreeClient();
-    const version = "2023-08-01"; // Add API version as required by Cashfree v3
-    const response = await cashfree.PGFetchOrder(version, orderId);
-
+    const version = "2023-08-01";
+    
+    // Try direct API call if SDK method is failing
+    const apiUrl = process.env.CASHFREE_ENVIRONMENT === "production" 
+      ? "https://api.cashfree.com/pg/orders" 
+      : "https://sandbox.cashfree.com/pg/orders";
+      
+    const headers = {
+      "x-api-version": version,
+      "x-client-id": process.env.CASHFREE_CLIENT_ID,
+      "x-client-secret": process.env.CASHFREE_CLIENT_SECRET,
+      "Content-Type": "application/json"
+    };
+    
+    console.log(`Calling Cashfree API at ${apiUrl}/${orderId}`);
+    
+    const response = await axios.get(`${apiUrl}/${orderId}`, { headers });
+    
     // Log the response for debugging
     console.log("Cashfree order verification response:", JSON.stringify(response.data, null, 2));
 
@@ -272,6 +289,7 @@ exports.verifyCashfreePayment = async (req, res) => {
       
       if (doc.exists) {
         const paymentInfo = doc.data();
+        console.log("Found payment info in Firestore:", paymentInfo);
 
         // Send admin notification email
         await sendAdminNotificationEmail({
@@ -290,6 +308,8 @@ exports.verifyCashfreePayment = async (req, res) => {
           "transactionInfo.status": "COMPLETED",
           "transactionInfo.updatedAt": new Date().toISOString(),
         });
+      } else {
+        console.log("Payment document not found in Firestore for orderId:", orderId);
       }
 
       return res.json({
@@ -324,7 +344,7 @@ exports.verifyCashfreePayment = async (req, res) => {
       message:
         "Verification failed due to a server error: " +
         (error.response?.data?.message || error.message),
-      error: error.stack, // Include stack trace for debugging
+      error: error.stack,
     });
   }
 };
