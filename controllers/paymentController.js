@@ -3,6 +3,14 @@ const { Cashfree, CFEnvironment } = require("cashfree-pg");
 const nodemailer = require("nodemailer");
 const admin = require("../utils/firebase");
 
+const SUPPORTED_CURRENCIES = ["AFN", "ALL", "DZD", "AOA", "ARS", "AMD", "AWG", "AUD", "AZN", "BSD", "BHD", "BDT", "BBD", "BZD", "BMD", "BTN", "BOB", "BAM", "BWP", "BRL", "BND", "BGN", "BIF", "KHR", "CAD", "CVE", "KYD", "XAF", "XPF", "CLP", "COP", "KMF", "CDF", "CRC", "CZK", "DKK", "DJF", "DOP", "XCD", "EGP", "ERN", "SZL", "ETB", "EUR", "FKP", "FJD", "GMD", "GEL", "GHS", "GIP", "GTQ", "GNF", "GYD", "HTG", "HNL", "HKD", "HUF", "ISK", "INR", "IDR", "IQD", "JMD", "JPY", "JOD", "KZT", "KES", "KWD", "KGS", "LAK", "LBP", "LRD", "LYD", "MOP", "MKD", "MGA", "MWK", "MYR", "MVR", "MRU", "MUR", "MXN", "MDL", "MNT", "MAD", "MZN", "NAD", "NPR", "ILS", "TWD", "NZD", "NIO", "NGN", "NOK", "PGK", "PYG", "PEN", "PHP", "PLN", "GBP", "QAR", "CNY", "OMR", "RON", "RUB", "RWF", "SHP", "WST", "SAR", "RSD", "SCR", "SLL", "SGD", "SBD", "SOS", "ZAR", "KRW", "LKR", "SRD", "SEK", "CHF", "TJS", "TZS", "THB", "TOP", "TTD", "TND", "TRY", "TMT", "AED", "UGX", "UAH", "UYU", "USD", "UZS", "VUV", "VND", "XOF", "YER", "ZMW"];
+const isCurrencySupported = (currency) => {
+  return CASHFREE_SUPPORTED_CURRENCIES.includes(currency);
+};
+const getDefaultCurrency = () => {
+  return "INR";
+};
+
 // Get Firestore instance
 const db = admin.firestore();
 
@@ -173,11 +181,13 @@ exports.initiateCashfreePayment = async (req, res) => {
     // Create return URL
     const finalReturnUrl = `${returnUrl || process.env.FRONTEND_URL + "/payment-status"}?order_id=${merchantTransactionId}`;
 
+    const orderCurrency = SUPPORTED_CURRENCIES.includes(currency) ? currency : 'INR';
+
     // Prepare order request
     const orderRequest = {
       order_id: merchantTransactionId,
       order_amount: amount.toString(),
-      order_currency: currency,
+      order_currency: orderCurrency,
       customer_details: {
         customer_id: `CUST_${Date.now()}`,
         customer_name: customerName,
@@ -200,7 +210,7 @@ exports.initiateCashfreePayment = async (req, res) => {
       const paymentInfo = {
         merchantTransactionId,
         amount: parseFloat(amount),
-        currency,
+        currency: orderCurrency,
         customerName,
         customerEmail,
         customerPhone: validatedPhone,
@@ -220,6 +230,7 @@ exports.initiateCashfreePayment = async (req, res) => {
         order_id: response.data.order_id,
         payment_session_id: response.data.payment_session_id,
         merchantTransactionId,
+        currency: orderCurrency
       });
     } else {
       return res.status(400).json({
@@ -393,3 +404,4 @@ exports.cashfreeWebhook = async (req, res) => {
     res.status(500).json({ success: false, message: "Webhook failed" });
   }
 };
+
